@@ -3,8 +3,8 @@ moduleConfig:
 
 {
   options.services.vscode-server = let
-    inherit (lib) mkEnableOption mkOption;
-    inherit (lib.types) listOf nullOr package str;
+    inherit (lib) mkEnableOption mkOption literalExpression;
+    inherit (lib.types) listOf nullOr package str bool;
   in {
     enable = mkEnableOption "VS Code Server";
 
@@ -38,10 +38,30 @@ moduleConfig:
         The install path.
       '';
     };
+
+    extensions = mkOption {
+      type = listOf package;
+      default = [ ];
+      example = literalExpression "[ pkgs.vscode-extensions.bbenoist.nix ]";
+      description = ''
+        The extensions Visual Studio Code should be started with.
+      '';
+    };
+
+    immutableExtensionsDir = mkOption {
+      type = bool;
+      default = false;
+      example = true;
+      description = ''
+        Whether extensions can be installed or updated manually
+        by Visual Studio Code.
+      '';
+    };
   };
 
   config = let
     inherit (lib) mkDefault mkIf mkMerge;
+    inherit (lib.strings) removePrefix;
     cfg = config.services.vscode-server;
   in mkIf cfg.enable (mkMerge [
     {

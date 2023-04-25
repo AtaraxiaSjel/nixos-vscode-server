@@ -1,14 +1,16 @@
 { lib, buildFHSUserEnv ? buildFHSEnv, buildFHSEnv ? buildFHSUserEnv
 , writeShellApplication, coreutils, findutils, inotify-tools, patchelf
-, stdenv, curl, icu, libunwind, libuuid, lttng-ust, openssl, zlib, krb5
+, stdenv, curl, icu, libunwind, libuuid, lttng-ust, openssl, zlib, krb5, buildEnv
 , enableFHS ? false
 , nodejsPackage ? null
 , extraRuntimeDependencies ? [ ]
 , installPath ? "~/.vscode-server"
+, extensions ? [ ]
+, immutableExtensionsDir ? false
 }:
 
 let
-  inherit (lib) makeBinPath makeLibraryPath optionalString;
+  inherit (lib) makeBinPath makeLibraryPath optionalString concatStringsSep;
 
   # Based on: https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/applications/editors/vscode/generic.nix
   runtimeDependencies = [
@@ -27,6 +29,31 @@ let
     # mono
     krb5
   ] ++ extraRuntimeDependencies;
+
+  symlinkExtensions = writeShellApplication {
+    name = "symlink-extensions";
+    runtimeInputs = [ coreutils ];
+    text = let
+      extensionPath = "${installPath}/extensions";
+      combinedExtensionsDrv = buildEnv {
+        name = "vscode-extensions";
+        paths = extensions;
+      };
+      extensionsFolder = "${combinedExtensionsDrv}/share/vscode/extensions";
+      extensionsNixPath = map (x: "${x}/share/vscode/extensions") extensions;
+      # Not working currently. Change ${extensionPath}/${k} to extension name
+      addSymlinkToExtension = k: ''
+        ln -sf ${k} ${extensionPath}/${k}
+      '';
+    in if immutableExtensionsDir then ''
+      [ -d ${extensionPath} ] && rm -rf ${extensionPath}
+      ln -sf ${extensionsFolder} ${extensionPath}
+    '' else ''
+      [ -d ${extensionPath} ] && rm -rf ${extensionPath}
+      mkdir -p ${extensionPath}
+      ${concatStringsSep "\n" (map addSymlinkToExtension extensionsNixPath)}
+    '';
+  };
 
   nodejs = nodejsPackage;
   nodejsFHS = buildFHSUserEnv {
@@ -140,6 +167,11 @@ let
       else
         mkdir -p "$bins_dir"
       fi
+
+      # Symlink extensions to installDir
+      ${optionalString (extensions != [ ]) ''
+        ${symlinkExtensions}/bin/symlink-extensions
+      ''}
 
       while IFS=: read -r bin event; do
         # A new version of the VS Code Server is being created.
